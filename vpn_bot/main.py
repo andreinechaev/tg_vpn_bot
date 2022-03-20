@@ -28,7 +28,7 @@ def launch():
     parser.add_argument('--dev_chat_id', type=int,
                         help='Dev Chat ID', required=True)
     parser.add_argument('--limit', type=int,
-                        help='Dev Chat ID', default=VPN_LIMIT_GB, required=False)
+                        help='Limit for VPN', default=VPN_LIMIT_GB, required=False)
     args = parser.parse_args()
     bot = VPNBot(chat_id=args.chat_id, dev_chat_id=args.dev_chat_id,
                  vpn_url=OUTLINE_VPN_ADDRESS, limit=args.limit)

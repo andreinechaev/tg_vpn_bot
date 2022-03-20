@@ -3,11 +3,14 @@ import json
 import logging
 import urllib.parse
 
+import numpy as np
+
 from outline.outline_vpn import OutlineVPN
 from telegram import ChatMember, Update, User, ReplyKeyboardRemove
 from telegram.ext import ConversationHandler, CallbackContext
 
 VPN_URL_PREFIX = 'https://s3.amazonaws.com/outline-vpn/invite.html#'
+
 
 def bytes_to_MB(bytes):
     return round(bytes / 1024 / 1024, 2)
@@ -101,16 +104,23 @@ class VPNBot:
 
     def stats(self, update: Update, context: CallbackContext):
         user = update.effective_user
-        vpn_name = self._create_namereate_name(user=user)
+        vpn_name = self._create_name(user=user)
         self.logger.info(f'User {vpn_name} requested statistics')
         vpns = self._get_vpns()
         user_vpns = [vpn for vpn in vpns if vpn.name == vpn_name]
         if len(user_vpns) == 1:
             user_vpn: OutlineVPN = user_vpns[0]
-            used = bytes_to_MB(user_vpn.used_bytes)
-            used_percent = round(used / GB_to_MB(self.limit) * 100, 2)
+            if user_vpn.used_bytes:
+                used = bytes_to_MB(user_vpn.used_bytes)
+                used_percent = round(used / GB_to_MB(self.limit) * 100, 2)
+            else:
+                used_percent = 0.0
+
+            used = [vpn.used_bytes for vpn in vpns if vpn.used_bytes]
             update.message.reply_text(
-                f'Вы использовали {used_percent}% трафика')
+                f'Вы использовали {used_percent}% трафика от {self.limit} GB.' +
+                f' Медианна/Среднестатистическое использование всех пользователей ' +
+                f'{bytes_to_MB(np.median(used))}/{bytes_to_MB(np.mean(used))} MB.')
         else:
             update.message.reply_text(
                 text='У вас нет активных VPN; Для создания нового используйте /start')
