@@ -33,47 +33,61 @@ class VPNBot:
     def start(self, update: Update, context: CallbackContext):
         try:
             chat = context.bot.get_chat(chat_id=self.chat_id)
-            member = chat.get_member(user_id=update.message.from_user.id)
+            member = context.bot.getChatMember(
+                chat_id=self.chat_id, user_id=update.effective_user.id)
         except Exception as e:
             self.logger.error(f'Error getting chat info: {e}')
             context.bot.sendMessage(
-                chat_id=user.id, text='Не удалось получить доступ к каналу; попробуйте через несколько секунд')
+                chat_id=update.effective_user.id.id, text='Не удалось получить доступ к каналу; попробуйте через несколько секунд')
             return
 
-        if member:
-            self.logger.info(f'User belongs to the {chat.title}')
-            user = update.effective_user
-            vpn_name = self._create_name(user=user)
-            vpns = self._get_vpns()
-            if vpn_name not in [vpn.name for vpn in vpns]:
-                print(f'Creating new VPN for {vpn_name}')
-                url = self._generate_vpn_url(vpn_name)
-                self.logger.info(url)
-                context.bot.sendMessage(
-                    chat_id=user.id, text=f'''
-                    {url} 
-                    Перейдите по ссылке для дальнейших инструкций. Если вы хотите оставить отзыв, используйте команду /feedback''', protect_content=True)
-            else:
-                vpns = [vpn for vpn in vpns if vpn.name == vpn_name]
-                if len(vpns) == 1:
-                    self.logger.info(f'User {vpn_name} already has a VPN')
-                    url = self._get_vpn_url(vpns[0])
-                    self.logger.info(url)
-                    context.bot.sendMessage(
-                        chat_id=user.id, text=f'''
-                    {url}
-                    Перейдите по ссылке для дальнейших инструкций. Если вы хотите оставить отзыв, используйте команду /feedback''', protect_content=True)
-                else:
-                    self.logger.error(f'User {vpn_name} has more than one VPN')
-        else:
+        if not self._is_member(member):
             self.logger.info('User does not belong to the group')
             context.bot.sendMessage(chat_id=update.effective_chat.id,
                                     text='You do not belong to the group. Ask You Know Who to join.')
+            return
 
-    def clean_text(self, text):
-        return text.replace('\n', ' ').replace('\r', '').replace('\t', ' ').strip()
+        self.logger.info(f'User belongs to the {chat.title}')
+        user = update.effective_user
+        vpn_name = self._create_name(user=user)
+        vpns = self._get_vpns()
+        if vpn_name not in [vpn.name for vpn in vpns]:
+            print(f'Creating new VPN for {vpn_name}')
+            url = self._generate_vpn_url(vpn_name)
+            self.logger.info(url)
+            context.bot.sendMessage(
+                chat_id=user.id, text=f'''
+                {url} 
+                Перейдите по ссылке для дальнейших инструкций. Если вы хотите оставить отзыв, используйте команду /feedback''', protect_content=True)
+        else:
+            vpns = [vpn for vpn in vpns if vpn.name == vpn_name]
+            if len(vpns) == 1:
+                self.logger.info(f'User {vpn_name} already has a VPN')
+                url = self._get_vpn_url(vpns[0])
+                self.logger.info(url)
+                context.bot.sendMessage(
+                    chat_id=user.id, text=f'''
+                {url}
+                Перейдите по ссылке для дальнейших инструкций. Если вы хотите оставить отзыв, используйте команду /feedback''', protect_content=True)
+            else:
+                self.logger.error(f'User {vpn_name} has more than one VPN')
 
     def start_feedback(self, update: Update, context: CallbackContext):
+        try:
+            member = context.bot.getChatMember(
+                chat_id=self.chat_id, user_id=update.effective_user.id)
+        except Exception as e:
+            self.logger.error(f'Error getting chat info: {e}')
+            context.bot.sendMessage(
+                chat_id=update.effective_user.id.id, text='Не удалось получить доступ к каналу; попробуйте через несколько секунд')
+            return
+
+        if not self._is_member(member):
+            self.logger.info('User does not belong to the group')
+            context.bot.sendMessage(chat_id=update.effective_chat.id,
+                                    text='You do not belong to the group. Ask You Know Who to join.')
+            return
+
         update.message.reply_text(
             'Пожалуйста оставьте ваш отзыв или используйте /cancel для отмены',
         )
@@ -84,7 +98,7 @@ class VPNBot:
         context.bot.sendMessage(
             chat_id=self.dev_chat_id, text=f'User {user} left feedback {update.message.text}')
 
-        if self.clean_text(update.message.text):
+        if self._clean_text(update.message.text):
             update.message.reply_text('Спасибо за ваш отзыв!')
         else:
             update.message.reply_text('Usage: /feedback')
@@ -103,6 +117,21 @@ class VPNBot:
         return ConversationHandler.END
 
     def stats(self, update: Update, context: CallbackContext):
+        try:
+            member = context.bot.getChatMember(
+                chat_id=self.chat_id, user_id=update.effective_user.id)
+        except Exception as e:
+            self.logger.error(f'Error getting chat info: {e}')
+            context.bot.sendMessage(
+                chat_id=user.id, text='Не удалось получить доступ к каналу; попробуйте через несколько секунд')
+            return
+
+        if not self._is_member(member):
+            self.logger.info('User does not belong to the group')
+            context.bot.sendMessage(chat_id=update.effective_chat.id,
+                                    text='You do not belong to the group. Ask You Know Who to join.')
+            return
+
         user = update.effective_user
         vpn_name = self._create_name(user=user)
         self.logger.info(f'User {vpn_name} requested statistics')
@@ -153,6 +182,9 @@ class VPNBot:
         self.logger.error(message)
         context.bot.send_message(
             chat_id=update.message.from_user.id, text="Произошла ошибка; попробуйте еще раз")
+
+    def _clean_text(self, text):
+        return text.replace('\n', ' ').replace('\r', '').replace('\t', ' ').strip()
 
     def _get_vpns(self):
         return self.client.get_keys()
