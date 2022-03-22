@@ -8,4 +8,5 @@ __pycache__
 *.log
 .env
 
+# servers list
 servers.json
