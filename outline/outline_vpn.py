@@ -3,9 +3,12 @@ API wrapper for Outline VPN
 """
 
 from dataclasses import dataclass
+from datetime import timedelta
 
 import requests
+import requests_cache
 
+requests_cache.install_cache('outline_vpn_cache', backend='sqlite', expire_after=timedelta(seconds=60))
 
 @dataclass
 class OutlineKey:
