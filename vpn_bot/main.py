@@ -10,15 +10,7 @@ from telegram.ext import Updater, CommandHandler, MessageHandler, ConversationHa
 requests.packages.urllib3.disable_warnings()
 
 TOKEN = os.getenv('TELEGRAM_TOKEN')
-OUTLINE_VPN_ADDRESS = os.getenv('OUTLINE_VPN_ADDRESS')
-VPN_LIMIT_GB = 8
-
-logging.basicConfig(filename='tg_bot.log',
-                    filemode='a',
-                    format='%(asctime)s,%(msecs)d %(name)s %(levelname)s %(message)s',
-                    datefmt='%H:%M:%S',
-                    level=logging.INFO)
-logger = logging.getLogger(__name__)
+VPN_LIMIT_GB = 10
 
 
 def launch():
@@ -29,9 +21,22 @@ def launch():
                         help='Dev Chat ID', required=True)
     parser.add_argument('--limit', type=int,
                         help='Limit for VPN', default=VPN_LIMIT_GB, required=False)
+    parser.add_argument('--servers', type=str,
+                        help='absolute path to JSON File with the servers list', required=True)
+    parser.add_argument('--log_file', type=str, default='/var/log/tg_bot.log',
+                        help='absolute path to JSON File with the servers list', required=False)
+    parser.add_argument('--log_level', type=int, default=logging.INFO,
+                        help='absolute path to JSON File with the servers list', required=False)
     args = parser.parse_args()
+
+    logging.basicConfig(filename=args.log_file,
+                        filemode='a',
+                        format='%(asctime)s,%(msecs)d %(name)s %(levelname)s %(message)s',
+                        datefmt='%H:%M:%S',
+                        level=args.log_level)
+
     bot = VPNBot(chat_id=args.chat_id, dev_chat_id=args.dev_chat_id,
-                 vpn_url=OUTLINE_VPN_ADDRESS, limit=args.limit)
+                 vpn_urls=args.servers, limit=args.limit)
 
     updater = Updater(token=TOKEN, use_context=True, request_kwargs={
         'read_timeout': 7, 'connect_timeout': 9})
