@@ -63,6 +63,7 @@ WantedBy=multi-user.target
 ```
 
 - limit: int - GBs allowed to use per user (default: 10GB)
+- max_users: int - maximum number of users allowed per VPN server (default: 100)
 - log_file: string - path to a file to log the bot's activity (default: /var/log/tg_bot.log)
 - log_level: int - log level (default: 20 - INFO; 10 - DEBUG)
 
