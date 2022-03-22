@@ -24,6 +24,10 @@ def GB_to_MB(GB):
     return round(GB * 1024, 2)
 
 
+class UserLimitReached(Exception):
+    pass
+
+
 class ServersConfigurator(FileSystemEventHandler):
 
     def __init__(self, url_path, url_filename):
@@ -51,9 +55,11 @@ class ServersConfigurator(FileSystemEventHandler):
 
 class VPNProvider:
 
-    def __init__(self, vpn_urls: str):
+    def __init__(self, vpn_urls: str, max_users: int = 100):
         self.logger = logging.getLogger(__name__)
         self.url_path, self.url_filename = os.path.split(vpn_urls)
+        self.max_users = max_users
+
         self.logger.debug(
             f'Watching {self.url_path} for changes in {self.url_filename}')
         self.configurator = ServersConfigurator(
@@ -113,6 +119,9 @@ class VPNProvider:
                 if key.name == username:
                     return VPN_URL_PREFIX + urllib.parse.quote(key.access_url)
 
+            if len(client.get_keys()) >= self.max_users:
+                raise UserLimitReached
+
             new_key = client.create_key()
             client.rename_key(new_key.key_id, username)
             return VPN_URL_PREFIX + urllib.parse.quote(new_key.access_url)
@@ -122,13 +131,13 @@ class VPNProvider:
 
 class VPNBot:
 
-    def __init__(self, chat_id: str, dev_chat_id: str, vpn_urls: str, limit: int = 8):
+    def __init__(self, chat_id: str, dev_chat_id: str, vpn_urls: str, limit: int = 8, max_users: int = 100):
         self.logger = logging.getLogger(__name__)
         self.chat_id = chat_id
         self.dev_chat_id = dev_chat_id
         self.limit = limit
 
-        self.provider = VPNProvider(vpn_urls)
+        self.provider = VPNProvider(vpn_urls, max_users=max_users)
 
     def start(self, update: Update, context: CallbackContext):
         user = update.effective_user
@@ -151,7 +160,16 @@ class VPNBot:
         self.logger.info(f'User belongs to the {chat.title}')
 
         vpn_name = self._create_name(user=user)
-        url = self.provider.generate_url(vpn_name)
+        try:
+            url = self.provider.generate_url(vpn_name)
+        except UserLimitReached:
+            self.logger.error(f'User limit reached for {vpn_name}')
+            context.bot.sendMessage(chat_id=update.effective_chat.id,
+                                    text='Превышен лимит пользователей в прокси; попробуйте позже.')
+            context.bot.sendMessage(chat_id=self.dev_chat_id,
+                                    text='No more available VPN resources')
+            return
+
         if url is not None:
             self.logger.info(url)
             context.bot.sendMessage(
