@@ -38,7 +38,7 @@ User=root
 Environment="TELEGRAM_TOKEN=YOUR:TOKEN"
 Environment="OUTLINE_VPN_ADDRESS=https://YOUR_SERVER/outline_vpn"
 WorkingDirectory=/home/user/tg_vpn_bot
-ExecStart=/usr/bin/python3 -c "from vpn_bot.main import launch; launch()" --chat_id=MAIN_CHAT_ID --dev_chat_id=DEV_CHAT_ID --limit=LIMIT
+ExecStart=/usr/bin/python3 -c "from vpn_bot.main import launch; launch()" --chat_id=MAIN_CHAT_ID --dev_chat_id=DEV_CHAT_ID --limit=LIMIT --servers=SERVERS
 ExecReload=/bin/kill -HUP $MAINPID
 
 [Install]
@@ -47,8 +47,27 @@ WantedBy=multi-user.target
 
 ### Parameters
 
-TELEGRAM_TOKEN - Telegram bot token, obtained from [Telegram Botfather](https://t.me/botfather)
-OUTLINE_VPN_ADDRESS - Outline VPN server address, obtained from Outline App installed on your maching in the server settings
-chat_id: string - ID of the main chat
-dev_chat_id: string - ID of the dev chat
-limit: int - GBs allowed to use per user
+- TELEGRAM_TOKEN - Telegram bot token, obtained from [Telegram Botfather](https://t.me/botfather)
+- OUTLINE_VPN_ADDRESS - Outline VPN server address, obtained from Outline App installed on your maching in the server settings
+- chat_id: string - ID of the main chat
+- dev_chat_id: string - ID of the dev chat
+- servers: string - path to a JSON file with a list of servers like:
+
+```json
+    {
+        "servers": [
+            "https://HOST:PORT/UNIQUE_TOKEN",
+            "https://HOST2:PORT2/UNIQUE_TOKEN2",
+        ]
+    }
+```
+
+- limit: int - GBs allowed to use per user (default: 10GB)
+- log_file: string - path to a file to log the bot's activity (default: /var/log/tg_bot.log)
+- log_level: int - log level (default: 20 - INFO; 10 - DEBUG)
+
+## TODO
+
+- [ ] VPN information from the server should be cached and updated independently
+- [ ] Add a command to get the list of servers (Admin only)
+- [ ] Consider inline commands
