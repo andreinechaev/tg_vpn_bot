@@ -14,5 +14,6 @@ setup(
     description="Telegram bot for Outline VPN",
     long_description=open("README.md", "r").read(),
     long_description_content_type="text/markdown",
-    install_requires=("requests","python-telegram-bot", "numpy", "watchdog"),
+    install_requires=("requests", "python-telegram-bot",
+                      "numpy", "watchdog", "requests-cache"),
 )
