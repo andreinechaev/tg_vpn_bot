@@ -19,6 +19,8 @@ VPN_URL_PREFIX = 'https://s3.amazonaws.com/outline-vpn/invite.html#'
 def bytes_to_MB(bytes):
     return round(bytes / 1024 / 1024, 2)
 
+def MB_to_bytes(MB):
+    return MB * 1024 * 1024
 
 def GB_to_MB(GB):
     return round(GB * 1024, 2)
@@ -55,10 +57,11 @@ class ServersConfigurator(FileSystemEventHandler):
 
 class VPNProvider:
 
-    def __init__(self, vpn_urls: str, max_users: int = 100):
+    def __init__(self, vpn_urls: str, max_users: int = 100, bytes_limit: int = 1000000):
         self.logger = logging.getLogger(__name__)
         self.url_path, self.url_filename = os.path.split(vpn_urls)
         self.max_users = max_users
+        self.bytes_limit = bytes_limit
 
         self.logger.debug(
             f'Watching {self.url_path} for changes in {self.url_filename}')
@@ -124,6 +127,7 @@ class VPNProvider:
 
             new_key = client.create_key()
             client.rename_key(new_key.key_id, username)
+            client.add_data_limit(new_key.key_id, self.bytes_limit)
             return VPN_URL_PREFIX + urllib.parse.quote(new_key.access_url)
         else:
             self.logger.error(f'Could not find a client for {username}')
@@ -136,8 +140,7 @@ class VPNBot:
         self.chat_id = chat_id
         self.dev_chat_id = dev_chat_id
         self.limit = limit
-
-        self.provider = VPNProvider(vpn_urls, max_users=max_users)
+        self.provider = VPNProvider(vpn_urls, max_users=max_users, bytes_limit=MB_to_bytes(GB_to_MB(limit)))
 
     def start(self, update: Update, context: CallbackContext):
         user = update.effective_user
