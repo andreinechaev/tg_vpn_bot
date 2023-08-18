@@ -16,7 +16,6 @@ def client() -> OutlineVPN:
     client = OutlineVPN(
         api_url=os.getenv("OUTLINE_CREDENTIALS")
     )  # pylint: disable=W0621
-    yield client
 
 
 def test_get_keys(client: OutlineVPN):  # pylint: disable=W0621

@@ -7,11 +7,14 @@ import urllib.parse
 import numpy as np
 
 from outline.outline_vpn import OutlineVPN
-from telegram import ChatMember, Update, User, ReplyKeyboardRemove
+from telegram import ChatMember, Update, User, ReplyKeyboardRemove, ChatMemberUpdated
 from telegram.ext import ConversationHandler, CallbackContext
 
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
+
+from bot.data.user import engine, User, Invitation
+from sqlalchemy.orm import Session
 
 VPN_URL_PREFIX = 'https://s3.amazonaws.com/outline-vpn/invite.html#'
 
@@ -19,11 +22,16 @@ VPN_URL_PREFIX = 'https://s3.amazonaws.com/outline-vpn/invite.html#'
 def bytes_to_MB(bytes):
     return round(bytes / 1024 / 1024, 2)
 
+
 def MB_to_bytes(MB):
     return MB * 1024 * 1024
 
+
 def GB_to_MB(GB):
     return round(GB * 1024, 2)
+
+def MB_to_GB(MB):
+    return round(MB / 1024, 2)
 
 
 class UserLimitReached(Exception):
@@ -38,30 +46,40 @@ class ServersConfigurator(FileSystemEventHandler):
         self.url_filename = url_filename
         self.path = os.path.join(url_path, url_filename)
         self.servers = {}
+        self.limit = MB_to_bytes(GB_to_MB(5))
+        self.max_users = 20
+
         self.update()
 
     def on_modified(self, event):
         if event.event_type == 'modified' and event.src_path == self.path:
             with open(self.path, 'r') as f:
-                servers = json.load(f)['servers']
+                json_f = json.load(f)
+                servers = json_f['servers']
                 self.logger.debug(f'Loaded servers: {servers}')
                 if servers != self.servers:
                     self.servers = servers
                     self.logger.debug(
                         f'Updated servers on: {event.event_type}  path : {event.src_path}')
 
+                    self.limit = self.limit if json_f.limit is None else json_f.limit
+                    self.max_users = self.max_users if json_f.max_users is None else json_f.max_users
+                    self.logger.debug(
+                        f'Updated limit: {self.limit}  max_users: {self.max_users}')
+
     def update(self):
         with open(self.path, 'r') as f:
-            self.servers = json.load(f)['servers']
+            json_f = json.load(f)
+            self.servers = json_f['servers']
+            self.max_users = json_f['max_users']
+            self.limit = MB_to_bytes(GB_to_MB(json_f['limit']))
 
 
 class VPNProvider:
 
-    def __init__(self, vpn_urls: str, max_users: int = 100, bytes_limit: int = 1000000):
+    def __init__(self, config: str):
         self.logger = logging.getLogger(__name__)
-        self.url_path, self.url_filename = os.path.split(vpn_urls)
-        self.max_users = max_users
-        self.bytes_limit = bytes_limit
+        self.url_path, self.url_filename = os.path.split(config)
 
         self.logger.debug(
             f'Watching {self.url_path} for changes in {self.url_filename}')
@@ -122,12 +140,18 @@ class VPNProvider:
                 if key.name == username:
                     return VPN_URL_PREFIX + urllib.parse.quote(key.access_url)
 
-            if len(client.get_keys()) >= self.max_users:
+            if len(client.get_keys()) >= self.configurator.max_users:
                 raise UserLimitReached
 
             new_key = client.create_key()
             client.rename_key(new_key.key_id, username)
             client.add_data_limit(new_key.key_id, self.bytes_limit)
+
+            with Session(engine) as sess:
+                u = User(username=username, link=new_key.access_url)
+                sess.add(u)
+                sess.commit()
+
             return VPN_URL_PREFIX + urllib.parse.quote(new_key.access_url)
         else:
             self.logger.error(f'Could not find a client for {username}')
@@ -135,12 +159,11 @@ class VPNProvider:
 
 class VPNBot:
 
-    def __init__(self, chat_id: str, dev_chat_id: str, vpn_urls: str, limit: int = 8, max_users: int = 100):
+    def __init__(self, chat_id: str, dev_chat_id: str, config: str):
         self.logger = logging.getLogger(__name__)
         self.chat_id = chat_id
         self.dev_chat_id = dev_chat_id
-        self.limit = limit
-        self.provider = VPNProvider(vpn_urls, max_users=max_users, bytes_limit=MB_to_bytes(GB_to_MB(limit)))
+        self.provider = VPNProvider(config)
 
     def start(self, update: Update, context: CallbackContext):
         user = update.effective_user
@@ -260,18 +283,59 @@ class VPNBot:
             user_vpn: OutlineVPN = user_vpns[0]
             if user_vpn.used_bytes:
                 used = bytes_to_MB(user_vpn.used_bytes)
-                used_percent = round(used / GB_to_MB(self.limit) * 100, 2)
+                used_percent = round(used / bytes_to_MB(self.provider.configurator.limit) * 100, 2)
             else:
                 used_percent = 0.0
 
             used = [vpn.used_bytes for vpn in all_keys if vpn.used_bytes]
             update.message.reply_text(
-                f'Вы использовали {used_percent}% трафика от {self.limit} GB.' +
+                f'Вы использовали {used_percent}% трафика от {MB_to_GB(bytes_to_MB(self.provider.configurator.limit))} GB.' +
                 f' Медианна/Среднестатистическое использование всех пользователей ' +
                 f'{bytes_to_MB(np.median(used))}/{bytes_to_MB(np.mean(used))} MB.')
         else:
             update.message.reply_text(
                 text='У вас нет активных VPN; Для создания нового используйте /start')
+
+    def _extract_status_change(self, chat_member_update: ChatMemberUpdated) -> tuple[bool, bool]:
+        """Takes a ChatMemberUpdated instance and extracts whether the 'old_chat_member' was a member
+        of the chat and whether the 'new_chat_member' is a member of the chat. Returns None, if
+        the status didn't change.
+        """
+        status_change = chat_member_update.difference().get("status")
+        if status_change is None:
+            return False, False
+
+        old_is_member, new_is_member = chat_member_update.difference().get("is_member",
+                                                                           (None, None))
+        old_status, new_status = status_change
+        was_member = (
+            old_status
+            in [
+                ChatMember.MEMBER,
+                ChatMember.CREATOR,
+                ChatMember.ADMINISTRATOR,
+            ]
+            or (old_status == ChatMember.RESTRICTED and old_is_member is True)
+        )
+        is_member = (
+            new_status
+            in [
+                ChatMember.MEMBER,
+                ChatMember.CREATOR,
+                ChatMember.ADMINISTRATOR,
+            ]
+            or (new_status == ChatMember.RESTRICTED and new_is_member is True)
+        )
+
+        return was_member, is_member
+
+    def chat_member_update(self, update: Update, context: CallbackContext):
+        was_member, is_member = self._extract_status_change(
+            update.my_chat_member)
+        if was_member and not is_member:
+            self.logger.info(f'User {update.effective_user.id} left the group')
+            context.bot.sendMessage(
+                chat_id=self.dev_chat_id, text=f'User {update.effective_user.id} left the group')
 
     def error_handler(self, update: object, context: CallbackContext) -> None:
         """Log the error and send a telegram message to notify the developer."""
