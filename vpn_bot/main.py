@@ -14,8 +14,7 @@ VPN_LIMIT_GB = 10
 
 
 def launch():
-    argparse.ArgumentParser(description='Outline VPN Telegram Bot')
-    parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser(description='Outline VPN Telegram Bot')
     parser.add_argument('--chat_id', type=int, help='Chat ID', required=True)
     parser.add_argument('--dev_chat_id', type=int,
                         help='Dev Chat ID', required=True)

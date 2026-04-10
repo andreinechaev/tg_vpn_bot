@@ -6,7 +6,7 @@ import urllib.parse
 
 import numpy as np
 
-from outline.outline_vpn import OutlineVPN
+from outline.outline_vpn import OutlineKey, OutlineVPN
 from telegram import ChatMember, Update, User, ReplyKeyboardRemove
 from telegram.ext import ConversationHandler, CallbackContext
 
@@ -44,7 +44,7 @@ class ServersConfigurator(FileSystemEventHandler):
         if event.event_type == 'modified' and event.src_path == self.path:
             with open(self.path, 'r') as f:
                 servers = json.load(f)['servers']
-                self.logger.debug(f'Loaded servers: {servers}')
+                self.logger.debug(f'Loaded {len(servers)} server(s)')
                 if servers != self.servers:
                     self.servers = servers
                     self.logger.debug(
@@ -174,7 +174,7 @@ class VPNBot:
             return
 
         if url is not None:
-            self.logger.info(url)
+            self.logger.info(f'VPN URL generated for user {vpn_name}')
             context.bot.sendMessage(
                 chat_id=user.id, text=f'''
                 {url} 
@@ -190,7 +190,7 @@ class VPNBot:
         except Exception as e:
             self.logger.error(f'Error getting chat info: {e}')
             context.bot.sendMessage(
-                chat_id=update.effective_user.id.id, text='Не удалось получить доступ к каналу; попробуйте через несколько секунд')
+                chat_id=update.effective_user.id, text='Не удалось получить доступ к каналу; попробуйте через несколько секунд')
             return
 
         if not self._is_member(member):
@@ -206,10 +206,11 @@ class VPNBot:
 
     def feedback(self, update: Update, context: CallbackContext):
         user = self._create_name(update.effective_user)
-        context.bot.sendMessage(
-            chat_id=self.dev_chat_id, text=f'User {user} left feedback {update.message.text}')
+        cleaned = self._clean_text(update.message.text)
 
-        if self._clean_text(update.message.text):
+        if cleaned:
+            context.bot.sendMessage(
+                chat_id=self.dev_chat_id, text=f'User {user} left feedback: {cleaned}')
             update.message.reply_text('Спасибо за ваш отзыв!')
         else:
             update.message.reply_text('Usage: /feedback')
@@ -234,7 +235,7 @@ class VPNBot:
         except Exception as e:
             self.logger.error(f'Error getting chat info: {e}')
             context.bot.sendMessage(
-                chat_id=user.id, text='Не удалось получить доступ к каналу; попробуйте через несколько секунд')
+                chat_id=update.effective_user.id, text='Не удалось получить доступ к каналу; попробуйте через несколько секунд')
             return
 
         if not self._is_member(member):
@@ -257,7 +258,7 @@ class VPNBot:
         all_keys = vpn.get_keys()
         user_vpns = [vpn for vpn in all_keys if vpn.name == vpn_name]
         if len(user_vpns) == 1:
-            user_vpn: OutlineVPN = user_vpns[0]
+            user_vpn: OutlineKey = user_vpns[0]
             if user_vpn.used_bytes:
                 used = bytes_to_MB(user_vpn.used_bytes)
                 used_percent = round(used / GB_to_MB(self.limit) * 100, 2)
